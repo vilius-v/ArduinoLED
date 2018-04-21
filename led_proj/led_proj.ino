@@ -36,11 +36,11 @@ uint32_t dark_green = strip.Color(0, 100, 0);
 
 // Profiles
 #define SINGLE 1
-#define SNAKE 2
-#define FLAG 3
-#define RAINBOW 4
-#define RAINBOW_CYCLE 5
-
+#define COLOR_CYCLE 2
+#define SNAKE 3
+#define FLAG 4
+#define RAINBOW 5
+#define RAINBOW_CYCLE 6
 
 // Per Profile Color Stuff
 uint8_t curr_flag = LT;
@@ -70,7 +70,8 @@ bool swap_color = false;
 #define INTERRUPT_WAIT 300
   
 // Function counter
-uint8_t func_counter = 1; 
+uint8_t func_counter = 1;
+uint8_t num_profiles = 6;
 
 ////////////////////////////////////////////////////////////////////////////
 
@@ -149,13 +150,65 @@ void setStripColor(uint32_t c) {
 }
 
 // Fills all LEDs with a single random color
-void setRandomColor() {
-  // Generate random color
-  uint32_t rand_color = strip.Color(random(256), random(256), random(256));
+void setRandomColor(uint8_t speed = 4, uint8_t period = 0) {
+  // Generate random target color channels
+  uint8_t targ_r = random(256);
+  uint8_t targ_g = random(256);
+  uint8_t targ_b = random(256);
+  
+  uint32_t targ_color = strip.Color(targ_r, targ_g, targ_b);
+  uint32_t curr_color = strip.getPixelColor(0);
 
-  // Assign to all LEDs
-  setStripColor(rand_color);
-  strip.show();
+  while (curr_color != targ_color) {
+    // Exit on interrupt
+    if (shouldExit()) {
+      delay(INTERRUPT_WAIT);
+      return;
+    }
+        
+    // Separate color channels
+    uint8_t curr_r = (curr_color >> 16) & 0xFF;
+    uint8_t curr_g = (curr_color >> 8)  & 0xFF;
+    uint8_t curr_b = (curr_color >> 0)  & 0xFF;  
+    
+    // Increment or decrement appropriately
+    if (curr_r != targ_r)
+      (curr_r < targ_r) ? curr_r += speed: curr_r -= speed; 
+    if (curr_g != targ_g)
+      (curr_g < targ_g) ? curr_g += speed: curr_g -= speed;
+    if (curr_b != targ_b)
+      (curr_b < targ_b) ? curr_b += speed: curr_b -= speed; 
+            
+    // Transition speed fix
+    if (speed != 1)
+    {
+      // Account for jumping around the end goal with weird speed factors
+      if (abs(curr_r - targ_r) <= speed) curr_r = targ_r; 
+      if (abs(curr_g - targ_g) <= speed) curr_g = targ_g;
+      if (abs(curr_b - targ_b) <= speed) curr_b = targ_b;
+    }
+      
+    // Set current color
+    curr_color = strip.Color(curr_r, curr_g, curr_b);
+    setStripColor(curr_color);
+
+    // Update
+    delay(period);
+    strip.show();
+  }
+}
+
+void colorCycle(uint8_t speed, uint8_t period) {
+  while (true) {
+    // Transition to next color
+    setRandomColor(speed, period);
+    
+    // Exit on interrupt
+    if (shouldExit()) {
+      delay(INTERRUPT_WAIT);
+      return;
+    }    
+  }
 }
 
 // Fill all LEDs one after the other with a color
@@ -179,7 +232,7 @@ void colorSnake(uint32_t c, uint8_t wait) {
     // Restart with new random color
     if (i == NUM_LED-1) {
       delay(1000);
-      i = 0;
+      i = -1;
       c = generateRandomColor();
       if (rainbow_snake)
         setStripColor(black);
@@ -235,7 +288,7 @@ void rainbow(uint8_t wait) {
     // Restart at end
     if (j == 255 && i == NUM_LED) {
       i = 0;
-      j = 0;    
+      j = -1;    
     }
   }
 }
@@ -260,7 +313,7 @@ void rainbowCycle(uint8_t wait) {
     // Restart at end
     if (j == 255 && i == NUM_LED) {
       i = 0;
-      j = 0;    
+      j = -1;    
     }
   }
 }
@@ -322,13 +375,14 @@ uint32_t Wheel(byte WheelPos) {
 
 void getNextProfile() {
   // Roll over
-  if (func_counter == 6)
+  if (func_counter == num_profiles + 1)
     func_counter = 1;
     
   // Cycle through different profiles
   switch (func_counter)
   {
     case SINGLE: setRandomColor(); break;
+    case COLOR_CYCLE: colorCycle(1, 25); break;
     case SNAKE: colorSnake(generateRandomColor(), 25); break;
     case FLAG: flag(curr_flag); break;
     case RAINBOW: rainbow(25); break;
